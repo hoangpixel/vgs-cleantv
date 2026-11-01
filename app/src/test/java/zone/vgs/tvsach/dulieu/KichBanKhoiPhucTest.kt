@@ -40,4 +40,13 @@ class KichBanKhoiPhucTest {
         val s = KichBanKhoiPhuc.tao(sl().copy(homeTruoc = "com.gathin.tvhome/.MainActivity"), vi = true)
         assertEquals(0, s.lines().count { it.contains("set-home-activity") })
     }
+
+    @Test fun aquaRestoreKeepsOriginalLauncherAndRestoresItsHome() {
+        val s = KichBanKhoiPhuc.tao(sl().copy(homeTruoc = "com.gathin.tvhome/.MainActivity"),
+            vi = true, homeSach = listOf("vn.anghon.aqua.launcher"))
+        assertTrue(s.contains("set-home-activity --user 0 com.gathin.tvhome/.MainActivity"))
+        assertTrue(s.contains(": adb uninstall vn.anghon.aqua.launcher"))
+        assertFalse(s.contains("adb uninstall com.gathin.tvhome"))
+        assertFalse(s.contains("adb uninstall com.ts.launcher"))
+    }
 }

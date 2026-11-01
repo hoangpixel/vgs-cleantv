@@ -17,10 +17,10 @@
          và trang công khai, không gửi gì riêng tư qua đó. -->
     <application
         android:usesCleartextTraffic="true"
-        android:banner="@drawable/banner_tv"
-        android:label="CleanTV"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher"
+        android:banner="${appBanner}"
+        android:label="${appLabel}"
+        android:icon="${appIcon}"
+        android:roundIcon="${appIcon}"
         android:theme="@style/Theme.TvSach"
         android:allowBackup="false"
         android:supportsRtl="true">

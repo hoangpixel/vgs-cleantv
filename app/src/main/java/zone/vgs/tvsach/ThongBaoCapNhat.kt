@@ -28,6 +28,7 @@ object ThongBaoCapNhat {
     const val MO_CAP_NHAT = "mo_cap_nhat"
 
     fun hen(ctx: Context) {
+        if (BuildConfig.AQUA_LITE) return
         val viec = PeriodicWorkRequestBuilder<KiemTraBanMoi>(12, TimeUnit.HOURS)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInitialDelay(1, TimeUnit.HOURS)

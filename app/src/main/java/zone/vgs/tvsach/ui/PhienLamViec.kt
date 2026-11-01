@@ -155,7 +155,7 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
 
     // Home sạch
     val dock = mutableStateListOf<String>()
-    var tenChao by mutableStateOf("")
+    var tenChao by mutableStateOf(if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) "Ăng Hòn" else "")
     var nutInput by mutableStateOf(false)
     var nutHome by mutableStateOf(false)
     var dnsChanQc by mutableStateOf(false)
@@ -184,7 +184,13 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
     /** Ô icon đều nhau kiểu Apple TV: icon trên nền màu của chính nó, không dùng ảnh banner (uniform_tiles). */
     var oDeuNhau by mutableStateOf(false)
     /** Chọn theme trên màn: công tắc ô icon đều nhau theo theme mới, người dùng vẫn đổi lại được sau đó. */
-    fun chonTheme(th: zone.vgs.tvsach.dulieu.Theme) { themeChon = th; oDeuNhau = th.cauHinh["uniform_tiles"] == true }
+    fun chonTheme(th: zone.vgs.tvsach.dulieu.Theme) {
+        themeChon = th
+        oDeuNhau = th.cauHinh["uniform_tiles"] == true
+        // Explicitly choosing Cinematic replaces v1's reduced-motion switch; saved advanced overrides stay explicit.
+        if (th.laAqua) tiviYeu = false
+        if (th.laAqua && tenChao.isBlank()) tenChao = "Ăng Hòn"
+    }
     /** Số app mỗi hàng (columns của launcher, 0 = theo theme), góp ý 24/10/2026: Sony chỉ có 4 app một hàng. */
     var soCot by mutableStateOf(0)
     /** Cho chọn app tự mở khi bật tivi (open_on_start_choice của launcher; góp ý dmenh568, quan1sd1998 24/10/2026). */
@@ -369,7 +375,10 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
     var phimHomeOk by mutableStateOf(true)
     /** Kết quả bấm thử nút Home lần gần nhất, gửi kèm danh sách gói để chẩn đoán. */
     var phimHomeGhi = ""
-    var themeChon by mutableStateOf(zone.vgs.tvsach.dulieu.THEMES.first())
+    val themes = zone.vgs.tvsach.dulieu.themesChoBan(zone.vgs.tvsach.BuildConfig.AQUA_LITE)
+    var themeChon by mutableStateOf(themes.first {
+        it.id == if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) "ang-hon-aqua-cosmic-plus" else "vgs"
+    })
 
     // Máy chiếu: màn của hãng dò được + những màn đã ghim vào nút "Máy chiếu" trên Home sạch (comp → nhãn).
     var laMayChieu by mutableStateOf(false)
@@ -698,7 +707,8 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
         // Điện thoại không có bản sao lưu (gỡ app, đổi máy, người khác dọn) thì lấy bản trên tivi.
         val slMay = kho.doc(info.khoaLuu)
         saoLuu = (slMay ?: io { tv.docSaoLuuTrenTv(info.khoaLuu) })?.also { b ->
-            b.ip = host; io { tv.luuSaoLuu(b) }
+            b.ip = host
+            io { if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) kho.ghi(b) else tv.luuSaoLuu(b) }
         }
         saoLuuTuTv = slMay == null && saoLuu != null
         // Xiaomi: sau khi đổi Home, nút INPUT của remote không mở bảng nguồn nữa (upstream #1368) — bật sẵn để Home sạch nhận.
@@ -1018,11 +1028,11 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
     private fun napTuJson(j: JSONObject) {
         // Khoá do theme đang dùng ghi (vgs_theme, từ 2.9) không phải lựa chọn của người dùng: đọc như mặc định, không thì
         // đổi sang theme khác vẫn dính (Kiểu Apple TV bật uniform_tiles, dock_glass, ẩn lời chào, dời hàng app).
-        val theme = zone.vgs.tvsach.dulieu.THEMES.firstOrNull { it.id == j.optString("vgs_theme") }
+        val theme = themes.firstOrNull { it.id == j.optString("vgs_theme") }
         theme?.let { themeChon = it }
         fun cuaTheme(k: String) = theme?.cauHinh?.containsKey(k) == true
         amLich = j.optBoolean("lunar_date", amLich)
-        nutTrenCung = j.optBoolean("top_buttons_top", false)
+        nutTrenCung = !cuaTheme("top_buttons_top") && j.optBoolean("top_buttons_top", false)
         tenDuoiApp = j.optBoolean("always_show_names", false)
         tenToTrenDock = j.optBoolean("dock_title", true)
         toMauOApp = j.optBoolean("icon_tile_color", true)
@@ -1068,7 +1078,7 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
         j.optJSONArray("link_tiles")?.let { a -> (0 until a.length()).mapNotNull { zone.vgs.tvsach.dulieu.OKenh.tuDong(a.optString(it)) }.forEach { kenhChon.add(it) } }
         // Trình phát IPTV đang dùng (ô IPTV đầu tiên) để thêm kênh mới cũng mở bằng nó.
         kenhChon.firstOrNull { o -> zone.vgs.tvsach.dulieu.Iptv.TRINH_PHAT.any { it.first == o.goi } }?.let { trinhPhatChon = it.goi }
-        j.optString("greeting_name").takeIf { it.isNotBlank() }?.let { tenChao = it }
+        tenChao = j.optString("greeting_name")
         j.optString("weather_place").takeIf { it.isNotBlank() }?.let { ten ->
             thanhPho = THANH_PHO.firstOrNull { it.ten == ten }
                 ?: zone.vgs.tvsach.dulieu.ThanhPho(ten, j.optDouble("weather_lat"), j.optDouble("weather_lon")).takeIf { !it.lat.isNaN() && !it.lon.isNaN() }
@@ -1101,6 +1111,9 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
     }
 
     fun caiHomeSach() = chay(t("Đang cài Home sạch…", "Installing the clean Home…")) {
+        check(!zone.vgs.tvsach.BuildConfig.AQUA_LITE) {
+            "Aqua Lite preview: install the separate launcher manually; automatic Home replacement is disabled."
+        }
         if (laAndroidCu) error(t("Home sạch cần Android 8 trở lên, tivi/hộp này là Android ${thongTin?.android}. CleanTV chỉ dọn được quảng cáo và app rác trên máy này.", "The clean Home needs Android 8 or later; this TV/box runs Android ${thongTin?.android}. CleanTV can only clean ads and junk apps here."))
         if (laFireTv) error(t("Fire TV không cho app nào thay màn Home (Amazon khoá). CleanTV chỉ dọn được quảng cáo và app rác trên Fire TV.", "Fire TV does not let any app replace Home (Amazon locks it). On Fire TV CleanTV can only clean ads and junk apps."))
         val sl = saoLuu ?: io { tv.damBaoSaoLuu(thongTin!!, getprop, ip) }.also { saoLuu = it }
@@ -1174,8 +1187,8 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
         val kenh = kenhChon.filter { trangThai?.caiDat?.contains(it.goi) == true }
         if (kenh.isNotEmpty()) put("link_tiles", JSONArray(kenh.map { it.dong() }))
         put("dock_apps", JSONArray(kenh.map { GOI_KENH + it.slug } + dock.toList()))
-        if (tenChao.isNotBlank()) put("greeting_name", tenChao.trim())
         themeChon.ghiVao(this)
+        put("greeting_name", tenChao.trim().ifBlank { if (themeChon.laAqua) "Ăng Hòn" else "" })
         if (anhNenRieng != null) { put("wallpaper", true); put("vgs_anh_rieng", true) }
         // Bộ ảnh riêng tự đổi (góp ý build.dng 27/10/2026): ảnh chính + ảnh thêm thành wallpapers/, đổi theo thứ tự.
         if (anhNenRieng != null && anhXoay.isNotEmpty()) {
@@ -1309,6 +1322,12 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
 
     fun lenhHome(): List<String> = buildList {
         val pk = tv.pkgHome
+        if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) {
+            add("# Aqua Lite: launcher must already be installed separately")
+            add("content write --uri content://$pk.theme/config.json")
+            add("am start -a $pk.action.APPLY_THEME -n ${tv.cmpHome}")
+            return@buildList
+        }
         val goc = trangThai?.homeHienTai?.substringBefore('/').orEmpty()
         if (!daCoHomeSach) {
             add(t("# Cài Home sạch (APK đi kèm app)", "# Install the clean Home (APK bundled in the app)"))
@@ -1337,7 +1356,8 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
     }
 
     private fun kichBan(): String = zone.vgs.tvsach.dulieu.KichBanKhoiPhuc.tao(
-        saoLuu ?: error(t("Chưa có bản sao lưu của tivi này.", "No backup for this TV yet.")), zone.vgs.tvsach.NgonNgu.tiengViet)
+        saoLuu ?: error(t("Chưa có bản sao lưu của tivi này.", "No backup for this TV yet.")), zone.vgs.tvsach.NgonNgu.tiengViet,
+        if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) listOf("vn.anghon.aqua.launcher") else ThaoTacTv.HOME_SACH.toList())
 
     val tenFileKichBan get() = "cleantv-khoi-phuc-" + (saoLuu?.ten ?: "tivi").lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(30) + ".bat"
 
@@ -1381,7 +1401,7 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
         val j = runCatching { JSONObject(chu) }.getOrNull()?.takeIf { it.has("vgs_file") || it.has("dock_apps") }
             ?: error(t("File này không phải file cấu hình CleanTV.", "This isn't a CleanTV settings file."))
         napTuJson(j)
-        zone.vgs.tvsach.dulieu.THEMES.firstOrNull { it.id == j.optString("vgs_theme") }?.let { themeChon = it }
+        themes.firstOrNull { it.id == j.optString("vgs_theme") }?.let { themeChon = it }
         if (j.has("vgs_nut_home")) nutHome = j.optBoolean("vgs_nut_home")
         if (j.has("vgs_dns")) dnsChanQc = j.optBoolean("vgs_dns")
         anhNenRieng = j.optString("vgs_anh_nen").takeIf { it.isNotBlank() }?.let { runCatching { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }.getOrNull() }
@@ -1462,6 +1482,14 @@ class PhienLamViec(app: Application) : AndroidViewModel(app) {
     fun apDungTheme() = chay(t("Đang đổi giao diện…", "Applying the theme…")) {
         val json = cauHinhHome()
         val anh = anhNenTheme()
+        if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) {
+            check(daCoHomeSach) { "Install the separate Aqua Lite launcher manually before applying settings." }
+            val bo = boAnhTheme()
+            io { tv.dayGiaoDienAqua(json, anh, bo) }
+            homeXong = true
+            man = Man.XONG
+            return@chay
+        }
         napAnhKenh()
         // Cài đè launcher đi kèm app (bản mới có dòng thời tiết…), giữ dữ liệu và dịch vụ trợ năng.
         thongBao = t("Đang cập nhật Home sạch…", "Updating the clean Home…")

@@ -12,7 +12,8 @@ object KichBanKhoiPhuc {
     private val TEN_GOI = Regex("^[A-Za-z0-9_.]+$")
     private val THANH_PHAN = Regex("^[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+$")
 
-    fun tao(sl: BanSaoLuu, vi: Boolean): String {
+    fun tao(sl: BanSaoLuu, vi: Boolean, homeSach: List<String> = HOME_SACH): String {
+        require(homeSach.isNotEmpty() && homeSach.all { TEN_GOI.matches(it) })
         fun t(v: String, e: String) = if (vi) v else e
         val dong = mutableListOf<String>()
         fun chu(s: String) { dong += ": $s" }
@@ -24,7 +25,7 @@ object KichBanKhoiPhuc {
         val goi = sl.daTatBoiApp.filter { TEN_GOI.matches(it) }
         if (goi.isNotEmpty()) chu(t("Bật lại ${goi.size} gói CleanTV đã tắt", "Re-enable the ${goi.size} packages CleanTV disabled"))
         goi.forEach { dong += "adb shell pm enable --user 0 $it" }
-        if (sl.launcherDaCai && THANH_PHAN.matches(sl.homeTruoc) && HOME_SACH.none { sl.homeTruoc.startsWith("$it/") }) {
+        if (sl.launcherDaCai && THANH_PHAN.matches(sl.homeTruoc) && homeSach.none { sl.homeTruoc.startsWith("$it/") }) {
             chu(t("Trả Home gốc", "Restore the stock Home"))
             dong += "adb shell cmd package set-home-activity --user 0 ${sl.homeTruoc}"
         }
@@ -34,7 +35,7 @@ object KichBanKhoiPhuc {
             dong += if (tc.isBlank() || tc == "null" || !Regex("^[A-Za-z0-9_.:/$]+$").matches(tc)) "adb shell settings delete secure enabled_accessibility_services"
             else "adb shell settings put secure enabled_accessibility_services $tc"
             chu(t("Muốn gỡ luôn Home sạch thì bỏ \": \" ở đầu dòng dưới", "To also uninstall the clean Home, remove the \": \" at the start of the next line"))
-            HOME_SACH.forEach { chu("adb uninstall $it") }
+            homeSach.forEach { chu("adb uninstall $it") }
         }
         if (sl.dnsDaDoi) {
             chu(t("Trả DNS như cũ", "Restore DNS"))

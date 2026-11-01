@@ -33,6 +33,7 @@ object CapNhat {
     }
 
     fun moAsset(ctx: Context, ten: String): java.io.InputStream {
+        if (BuildConfig.AQUA_LITE) return ctx.assets.open(ten)
         val f = fileDuLieu(ctx, ten)
         return if (f.isFile && f.length() > 0) f.inputStream() else ctx.assets.open(ten)
     }
@@ -52,6 +53,7 @@ object CapNhat {
      * Trả về bản app mới nếu có (versionCode cao hơn bản đang chạy).
      */
     fun kiemTra(ctx: Context): BanMoi? {
+        if (BuildConfig.AQUA_LITE) return null
         val j = JSONObject(String(tai("$GOC/cap-nhat.json"), Charsets.UTF_8))
         val prefs = ctx.getSharedPreferences("ota", Context.MODE_PRIVATE)
         j.optJSONObject("duLieu")?.let { dl ->
@@ -77,7 +79,7 @@ object CapNhat {
     }
 
     /** Chỉ đọc bản app mới (không kéo dữ liệu) — cho việc kiểm tra chạy nền. */
-    fun kiemTraApp(): BanMoi? = banApp(JSONObject(String(tai("$GOC/cap-nhat.json"), Charsets.UTF_8)))
+    fun kiemTraApp(): BanMoi? = if (BuildConfig.AQUA_LITE) null else banApp(JSONObject(String(tai("$GOC/cap-nhat.json"), Charsets.UTF_8)))
 
     private fun banApp(j: JSONObject): BanMoi? {
         val app = j.optJSONObject("app") ?: return null

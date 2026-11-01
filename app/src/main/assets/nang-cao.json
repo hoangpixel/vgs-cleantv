@@ -550,6 +550,60 @@
 "moTaVi": "Màu viền sáng quanh app đang chọn khi bật giao diện lễ hội; mặc định vàng đèn dầu."
 },
 {
+"khoa": "focus_accent_color",
+"kieu": "chu",
+"moTa": "Static focus colour (#RRGGBB), independent of festive skins. Requires the Aqua Lite launcher.",
+"canThan": false,
+"ten": "Màu focus Aqua Lite",
+"moTaVi": "Màu viền focus Aqua, ví dụ #80DEDA. Cinematic v2.1 giữ viền aqua trên dock/lưới, glow vẫn theo app; giao diện lễ hội ưu tiên màu lễ hội."
+},
+{
+"khoa": "galaxy_space_color", "kieu": "chu", "canThan": false,
+"ten": "Galaxy: không gian sâu", "moTa": "Galaxy v2.2 deep space #07121D; independent of v2.1 colours.",
+"moTaVi": "Màu tối của tinh vân, mặc định #07121D. Chỉ preset Galaxy v2.2 dùng bộ màu Galaxy."
+},
+{
+"khoa": "galaxy_navy_color", "kieu": "chu", "canThan": false,
+"ten": "Galaxy: midnight navy", "moTa": "Galaxy v2.2 text-side navy #0B2030.",
+"moTaVi": "Navy phía chữ, mặc định #0B2030. Giữ tối để đọc chữ trắng."
+},
+{
+"khoa": "galaxy_dark_teal_color", "kieu": "chu", "canThan": false,
+"ten": "Galaxy: teal tối", "moTa": "Galaxy v2.2 dark teal cloud #123F50.",
+"moTaVi": "Lớp mây teal tối tạo chiều sâu, mặc định #123F50."
+},
+{
+"khoa": "galaxy_ocean_color", "kieu": "chu", "canThan": false,
+"ten": "Galaxy: ocean teal", "moTa": "Galaxy v2.2 broad teal ribbon #1A6875.",
+"moTaVi": "Dải tinh vân teal rộng, mặc định #1A6875."
+},
+{
+"khoa": "galaxy_glow_color", "kieu": "chu", "canThan": false,
+"ten": "Galaxy: ánh aqua", "moTa": "Galaxy v2.2 static aqua cloud #52C6C6.",
+"moTaVi": "Ánh aqua loang tĩnh, mặc định #52C6C6; không phải hiệu ứng chuyển động."
+},
+{
+"khoa": "galaxy_indigo_color", "kieu": "chu", "canThan": false,
+"ten": "Galaxy: indigo", "moTa": "Galaxy v2.2 restrained blue-violet cloud #4256A8.",
+"moTaVi": "Mây indigo nhỏ phía phải dưới dải aqua, mặc định #4256A8."
+},
+{
+"khoa": "aqua_gradient_color",
+"kieu": "chu",
+"moTa": "Static deep teal scrim colour (#RRGGBB), above artwork and wallpaper. Requires Aqua Cinematic v2.1.",
+"canThan": false,
+"ten": "Màu gradient Aqua Cinematic",
+"moTaVi": "Màu deep teal của gradient phủ trên artwork/ảnh nền, mặc định #126A76. Preset Aqua Cinematic v2.1; Màu focus Aqua cũng là màu sáng ở góc gradient."
+},
+{
+"khoa": "aqua_night_color",
+"kieu": "chu",
+"moTa": "Dark lower end of the static Aqua Cinematic v2.1 scrim (#RRGGBB), default #091923.",
+"canThan": false,
+"ten": "Màu tối gradient Aqua Cinematic",
+"moTaVi": "Màu tối phía dưới gradient tĩnh, mặc định #091923. Cần preset Aqua Cinematic; màu navy phía chữ dùng Màu nền."
+},
+{
 "khoa": "settings_key_keycodes",
 "kieu": "ds-so",
 "moTa": "Remote buttons that open Settings, for HomeKeyService (TCL Google TV gear: [83])",

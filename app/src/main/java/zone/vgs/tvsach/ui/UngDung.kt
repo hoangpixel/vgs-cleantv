@@ -65,7 +65,6 @@ import zone.vgs.tvsach.NgonNgu
 import zone.vgs.tvsach.R
 import zone.vgs.tvsach.dulieu.LoaiMuc
 import zone.vgs.tvsach.dulieu.MucGoi
-import zone.vgs.tvsach.dulieu.THEMES
 import zone.vgs.tvsach.dulieu.HUONG_DAN
 import zone.vgs.tvsach.dulieu.THANH_PHO
 import zone.vgs.tvsach.dulieu.Theme
@@ -234,10 +233,13 @@ private fun ThanhTren(vm: PhienLamViec) {
         if (vm.man != Man.CHINH) {
             IconButton(onClick = { if (!vm.dangBan) quayLai(vm) }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, t("Quay lại", "Back")) }
         } else Spacer(Modifier.width(12.dp))
-        Image(painterResource(R.drawable.logo_cleantv), "CleanTV", Modifier.size(32.dp))
+        if (BuildConfig.AQUA_LITE) Text("Ăng Hòn Aqua Lite", fontWeight = FontWeight.Bold, color = Color(0xFF80DEDA))
+        else Image(painterResource(R.drawable.logo_cleantv), "CleanTV", Modifier.size(32.dp))
         Spacer(Modifier.width(8.dp))
-        Text("Clean", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-        Text("TV", fontWeight = FontWeight.Black, fontSize = 20.sp, color = Hong)
+        if (!BuildConfig.AQUA_LITE) {
+            Text("Clean", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Text("TV", fontWeight = FontWeight.Black, fontSize = 20.sp, color = Hong)
+        }
         Spacer(Modifier.weight(1f))
         val ten = vm.thongTin?.tenHienThi
         if (vm.man != Man.CHINH && ten != null) {
@@ -434,7 +436,8 @@ private fun ManChinh(vm: PhienLamViec) = Cuon {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
         .background(Brush.verticalGradient(listOf(Tim.copy(alpha = 0.35f), The1))).border(1.dp, Vien, RoundedCornerShape(24.dp)).padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Image(painterResource(R.drawable.logo_cleantv), null, Modifier.size(64.dp))
+        if (BuildConfig.AQUA_LITE) Icon(Icons.Rounded.WaterDrop, null, Modifier.size(64.dp), tint = Color(0xFF80DEDA))
+        else Image(painterResource(R.drawable.logo_cleantv), null, Modifier.size(64.dp))
         Text(t("Tivi hết\nquảng cáo", "No more\nTV ads"), fontWeight = FontWeight.Black, fontSize = 26.sp, lineHeight = 32.sp)
         Phu(t("Kết nối tivi qua Wi-Fi, tắt quảng cáo với app rác của hãng, rồi thay màn Home cho gọn. Muốn trả lại như cũ thì bấm Khôi phục.",
             "Connect to the TV over Wi-Fi, switch off the maker's ads and junk apps, then give it a clean Home. Want it back? Press Restore."))
@@ -995,7 +998,8 @@ private fun XemTruocHome(vm: PhienLamViec) {
             else (th.anhNen ?: th.anhXem)?.let { a -> ctx.assets.open(a).use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 }) } }
         }.getOrNull()?.asImageBitmap()
     }
-    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(th.mau.map { Color(it) })).border(1.dp, Vien, RoundedCornerShape(16.dp))) {
+    val mauNen = if (th.id == "ang-hon-aqua-lite") listOf(Color(0xFF102637), Color(0xFF102637)) else th.mau.map { Color(it) }
+    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(mauNen)).border(1.dp, Vien, RoundedCornerShape(16.dp))) {
         if (anh != null) Image(anh, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
         if (vm.lamToiNen > 0) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = vm.lamToiNen / 100f)))
         val mauDau = vm.mauChu?.let { Color(android.graphics.Color.parseColor(it)) } ?: Color.White
@@ -1016,7 +1020,7 @@ private fun XemTruocHome(vm: PhienLamViec) {
 private fun TheGiaoDien(vm: PhienLamViec) {
     The {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            THEMES.forEach { th -> TheTheme(th, th == vm.themeChon) { vm.chonTheme(th) } }
+            vm.themes.forEach { th -> TheTheme(th, th == vm.themeChon) { vm.chonTheme(th) } }
         }
         // Ảnh của chính mình làm hình nền (góp ý 23/10/2026): thay ảnh / bộ ảnh của theme, giữ màu và hiệu ứng theme.
         val chonNhieuAnh = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(ANH_XOAY_TOI_DA)) { uris ->
@@ -1370,7 +1374,7 @@ private fun TheTuyChinh(vm: PhienLamViec) {
 
 /** Nhóm của một khoá Nâng cao, theo thứ tự hiện. */
 private val NHOM_NANG_CAO = listOf(
-    Triple("hinh-nen", "Hình nền & màu" to "Wallpaper & colour", Regex("^(background_color|sky_intensity|wallpaper_.*|accent_color|festival.*|glow_style|ambient_glow)$")),
+    Triple("hinh-nen", "Hình nền & màu" to "Wallpaper & colour", Regex("^(background_color|sky_intensity|wallpaper_.*|accent_color|focus_accent_color|festival.*|glow_style|ambient_glow)$")),
     Triple("dock", "Dock & lưới app" to "Dock & app grid", Regex("^(fill_dock|hidden_apps|columns|rows_below_dock|dock_.*|library_apps|app_library_selection|app_labels|app_banners|module_cards|reorder_button|tile_menu|fade_rows|focus_overshoot)$")),
     Triple("thanh-tren", "Thanh trên & lời chào" to "Top bar & greeting", Regex("^(show_.*|icon_only_.*|top_menu|launcher_settings_button|wifi_.*|greeting|shamsi_date|vpn_app)$")),
     Triple("dien-anh", "Home điện ảnh" to "Cinematic Home", Regex("^cinematic_.*$")),

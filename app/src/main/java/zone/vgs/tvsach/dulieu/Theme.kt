@@ -19,7 +19,10 @@ data class Theme(
     val boAnh: String? = null,
     val anhXem: String? = null,
 ) {
+    val laAqua: Boolean get() = id in setOf("ang-hon-aqua-lite", "ang-hon-aqua-galaxy", "ang-hon-aqua-cosmic", "ang-hon-aqua-cosmic-plus")
     fun ghiVao(o: JSONObject) {
+        // A previous Cosmic Plus flag must not survive choosing a legacy preset.
+        if (!cauHinh.containsKey("aqua_cosmic_plus")) o.remove("aqua_cosmic_plus")
         cauHinh.forEach { (k, v) -> o.put(k, v) }
         o.put("wallpaper", anhNen != null || boAnh != null)
         // Lần sau kết nối lại: mở đúng theme này, và biết khoá nào do theme ghi chứ không phải người dùng bật.
@@ -28,6 +31,39 @@ data class Theme(
 }
 
 val THEMES = listOf(
+    Theme("ang-hon-aqua-lite", "Ăng Hòn Aqua Cinematic v2.1", "Ăng Hòn Aqua Cinematic v2.1",
+        "Gradient navy–aqua trên artwork, viền chọn aqua; giữ chuyển động Điện ảnh",
+        "Navy–aqua gradient over artwork, aqua focus rim; original Cinematic motion",
+        mapOf("background_color" to "#102637", "focus_accent_color" to "#80DEDA",
+            "aqua_cinematic" to true, "aqua_gradient_color" to "#126A76", "aqua_night_color" to "#091923",
+            "header_white" to true, "header_color" to "#FFFFFF", "show_greeting" to true, "locale" to "vi",
+            "sky_intensity" to 35, "reduced_motion" to false, "animations" to true,
+            "advanced_effects" to false, "ambient_glow" to true, "app_glow" to false,
+            "dock_glass" to false, "glass_style" to "glass", "dock_band" to true, "dock_row" to true,
+            "focus_overshoot" to true, "uniform_tiles" to false,
+            "columns" to 5, "cinematic_home" to true, "cinematic_dots" to true,
+            "cinematic_art" to 50, "cinematic_scrim" to 100, "cinematic_white_focus" to false,
+            "dock_title" to true, "single_row" to false, "rows_below_dock" to 0,
+            "rows_offset_dp" to 0, "fade_rows" to false),
+        null, listOf(0xFF091923, 0xFF102637, 0xFF126A76, 0xFF80DEDA)),
+    Theme("ang-hon-aqua-galaxy", "Ăng Hòn Aqua Galaxy — Cinematic v2.2", "Ăng Hòn Aqua Galaxy — Cinematic v2.2",
+        "Tinh vân aqua–teal, indigo nhẹ; màu Galaxy riêng, giữ chuyển động Điện ảnh",
+        "Aqua–teal nebula and subtle indigo; separate Galaxy colours, original Cinematic motion",
+        mapOf("background_color" to "#0B2030", "focus_accent_color" to "#80DEDA",
+            "aqua_cinematic" to true, "aqua_galaxy" to true,
+            "galaxy_space_color" to "#07121D", "galaxy_navy_color" to "#0B2030",
+            "galaxy_dark_teal_color" to "#123F50", "galaxy_ocean_color" to "#1A6875",
+            "galaxy_glow_color" to "#52C6C6", "galaxy_indigo_color" to "#4256A8",
+            "header_white" to true, "header_color" to "#FFFFFF", "show_greeting" to true, "locale" to "vi",
+            "sky_intensity" to 35, "reduced_motion" to false, "animations" to true,
+            "advanced_effects" to false, "ambient_glow" to true, "app_glow" to false,
+            "dock_glass" to false, "glass_style" to "glass", "dock_band" to true, "dock_row" to true,
+            "focus_overshoot" to true, "uniform_tiles" to false,
+            "columns" to 5, "cinematic_home" to true, "cinematic_dots" to true,
+            "cinematic_art" to 50, "cinematic_scrim" to 100, "cinematic_white_focus" to false,
+            "dock_title" to true, "single_row" to false, "rows_below_dock" to 0,
+            "rows_offset_dp" to 0, "fade_rows" to false),
+        null, listOf(0xFF07121D, 0xFF0B2030, 0xFF1A6875, 0xFF52C6C6, 0xFF4256A8)),
     Theme("vgs", "VGS", "VGS", "Logo VGS tím, nền đổi sắc theo giờ", "Violet VGS logo, sky follows the time of day",
         mapOf("background_color" to "#140A3A", "sky_intensity" to 55, "dock_band" to false), "theme/vgs.jpg", listOf(0xFF0D0A38, 0xFF22168A, 0xFF4C1FD0)),
     // Kiểu Apple TV (góp ý kimhuenguyen1964 24/10/2026, Alex 25/10): nửa trên phủ màu + ảnh của app đang chọn như top
@@ -60,7 +96,28 @@ val THEMES = listOf(
         mapOf("background_color" to "#000000"), null, listOf(0xFF000000, 0xFF111111)),
     Theme("sau-cot", "Nhiều app", "More apps", "6 cột, thấy thêm một hàng app", "6 columns, one more row visible",
         mapOf("columns" to 6, "rows_below_dock" to 1, "background_color" to "#000000"), null, listOf(0xFF111111, 0xFF222233)),
-)
+).flatMap { theme ->
+    if (theme.id != "ang-hon-aqua-galaxy") listOf(theme) else listOf(theme, theme.copy(
+        id = "ang-hon-aqua-cosmic",
+        tenVi = "Ăng Hòn Aqua Galaxy — Cinematic v2.3c",
+        tenEn = "Ăng Hòn Aqua Galaxy — Cinematic v2.3c",
+        moTaVi = "Lời chào dưới giờ/ngày, hành tinh champagne và 12 sao tĩnh; giữ nền Galaxy v2.2",
+        moTaEn = "Greeting below time/date, Champagne Moon and 12 static stars; original Galaxy backdrop",
+        cauHinh = theme.cauHinh + mapOf("aqua_cosmic" to true, "date_below_clock" to true, "top_buttons_top" to true),
+    ), theme.copy(
+        id = "ang-hon-aqua-cosmic-plus",
+        tenVi = "Ăng Hòn Aqua Galaxy — Cosmic Plus v2.3e",
+        tenEn = "Ăng Hòn Aqua Galaxy — Cosmic Plus v2.3e",
+        moTaVi = "Hành tinh champagne 58 px thấp hơn, 28 sao tĩnh; giữ chuyển động Điện ảnh",
+        moTaEn = "Lower 58 px Champagne Moon, 28 static stars; original Cinematic motion",
+        cauHinh = theme.cauHinh + mapOf("aqua_cosmic" to true, "aqua_cosmic_plus" to true,
+            "date_below_clock" to true, "top_buttons_top" to true),
+    ))
+}
+
+/** Personal builds keep attribution but do not offer upstream branded wallpapers as their own themes. */
+fun themesChoBan(aquaLite: Boolean): List<Theme> =
+    if (aquaLite) THEMES.filterNot { it.id in setOf("vgs", "macos") } else THEMES
 
 /** Thành phố cho dòng thời tiết trên Home sạch (weather_lat/lon/place của launcher). */
 data class ThanhPho(val ten: String, val lat: Double, val lon: Double)

@@ -18,3 +18,5 @@ og/tv-sau.png
 launcher-ky.keystore
 .env.cloudflare
 .env*
+app/src/aqua/assets/*.apk
+app/src/aqua/assets/aqua-launcher.properties

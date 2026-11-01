@@ -20,6 +20,7 @@ class ThaoTacTv(private val adb: KetNoiAdb, private val kho: KhoSaoLuu) {
      */
     private var pkgHomeDaDo: String? = null
     val pkgHome: String get() = pkgHomeDaDo ?: run {
+        if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) return@run "vn.anghon.aqua.launcher"
         val cuaMinh = sh("dumpsys package $PKG_HOME_XIAOMI | grep -c '$PKG_HOME_XIAOMI/$NS_HOME.MainActivity'").trim().toIntOrNull()?.let { it > 0 } == true
         val coTen = sh("pm path $PKG_HOME_XIAOMI").isNotBlank()
         val xiaomi = sh("pm list packages com.mitv.tvhome").lines().any { it.trim() == "package:com.mitv.tvhome" }
@@ -29,6 +30,7 @@ class ThaoTacTv(private val adb: KetNoiAdb, private val kho: KhoSaoLuu) {
     /** Gọi khi kết nối tivi mới: quên những gì đã dò của tivi trước. */
     fun quenTivi() { pkgHomeDaDo = null; cvteDaDo = null }
     val cmpHome get() = "$pkgHome/$NS_HOME.MainActivity"
+    private val homePhucHoi get() = if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) setOf(pkgHome) else HOME_SACH
     /** File APK trong assets cho pkgHome. */
     val apkHome get() = if (pkgHome == PKG_HOME_XIAOMI) "tvhome-xiaomi.apk" else "tvhome.apk"
 
@@ -502,7 +504,7 @@ class ThaoTacTv(private val adb: KetNoiAdb, private val kho: KhoSaoLuu) {
         }
 
         // Xiaomi: bản com.gathin.tvhome cài từ trước (bị hãng chặn) thì gỡ, để không còn hai Home sạch.
-        if (pkgHome != PKG_HOME && sh("pm path $PKG_HOME").isNotBlank()) {
+        if (pkgHome == PKG_HOME_XIAOMI && sh("pm path $PKG_HOME").isNotBlank()) {
             bao(t("Gỡ Home sạch bản cũ ($PKG_HOME)…", "Removing the old clean Home ($PKG_HOME)…"))
             sh("pm uninstall $PKG_HOME")
         }
@@ -675,6 +677,25 @@ class ThaoTacTv(private val adb: KetNoiAdb, private val kho: KhoSaoLuu) {
 
     /** Ảnh ô kênh (kenh-vtv1.jpg…) cho link_tiles của bản vá launcher; PhienLamViec đặt trước khi đẩy cấu hình. */
     var anhKenh: List<Pair<String, ByteArray>> = emptyList()
+
+    /** Aqua preview: write only this launcher's theme files; never repair packages or change system settings. */
+    fun dayGiaoDienAqua(json: String, anhNen: ByteArray?, boAnh: List<Pair<String, ByteArray>>?) {
+        check(zone.vgs.tvsach.BuildConfig.AQUA_LITE && pkgHome == "vn.anghon.aqua.launcher")
+        fun ghi(ten: String, du: ByteArray) {
+            check(ghiFileTheme(ten, du)) { "Cannot write Aqua theme file: $ten" }
+        }
+        // Write image files before publishing the config that refers to them.
+        anhNen?.let { ghi("wallpaper.jpg", it) }
+        sh("content delete --uri content://$pkgHome.theme/wallpapers >/dev/null 2>&1; true")
+        boAnh?.forEach { (ten, du) ->
+            require(Regex("[A-Za-z0-9_-]+\\.jpg").matches(ten))
+            ghi("wallpapers/$ten", du)
+        }
+        ghi("config.json", json.toByteArray(Charsets.UTF_8))
+        ghi("theme_revision", java.util.UUID.randomUUID().toString().toByteArray(Charsets.UTF_8))
+        // Explicit launch reads the new config. Do not force-stop or rewrite accessibility settings.
+        sh("am start -a $pkgHome.action.APPLY_THEME -n $cmpHome >/dev/null")
+    }
 
     fun dayCauHinh(json: String, anhNen: ByteArray? = null, boAnh: List<Pair<String, ByteArray>>? = null) {
         giaHanGac()
@@ -1005,7 +1026,7 @@ class ThaoTacTv(private val adb: KetNoiAdb, private val kho: KhoSaoLuu) {
     fun nhaNutHome(truoc: String?) {
         val tc = sh("settings get secure enabled_accessibility_services").trim()
         val ve = (truoc?.takeIf { it.isNotBlank() && it != "null" } ?: tc)
-            .split(':').filter { d -> d.isNotBlank() && d != "null" && HOME_SACH.none { d.startsWith("$it/") } }.joinToString(":")
+            .split(':').filter { d -> d.isNotBlank() && d != "null" && homePhucHoi.none { d.startsWith("$it/") } }.joinToString(":")
         if (ve != tc) {
             if (ve.isBlank()) sh("settings delete secure enabled_accessibility_services") else sh("settings put secure enabled_accessibility_services '$ve'")
         }
@@ -1018,7 +1039,7 @@ class ThaoTacTv(private val adb: KetNoiAdb, private val kho: KhoSaoLuu) {
                 sh("am start -n $pkgHome/$NS_HOME.MainActivity >/dev/null 2>&1; sleep 3; true")
             }
         }
-        HOME_SACH.forEach { p ->
+        homePhucHoi.forEach { p ->
             sh("pm revoke $p android.permission.WRITE_SECURE_SETTINGS 2>/dev/null; appops set $p SYSTEM_ALERT_WINDOW default 2>/dev/null; true")
         }
     }
@@ -1134,7 +1155,7 @@ class ThaoTacTv(private val adb: KetNoiAdb, private val kho: KhoSaoLuu) {
             sh("settings put global private_dns_mode opportunistic; settings delete global private_dns_specifier")
         }
         if (khoaDaCai()) { bao(t("Gỡ Khoá trẻ em…", "Removing the Kids lock…")); runCatching { tatKhoa(go = true) } }
-        if (goLauncher) HOME_SACH.forEach { p ->
+        if (goLauncher) homePhucHoi.forEach { p ->
             if (sh("pm path $p").isNotBlank()) { bao(t("Gỡ Home sạch ($p)…", "Removing the clean Home ($p)…")); sh("pm uninstall $p") }
         }
         // Home hệ thống của hãng: ưu tiên Home gốc app biết, rồi app hệ thống đầu tiên có màn HOME dùng được.
@@ -1163,7 +1184,8 @@ class ThaoTacTv(private val adb: KetNoiAdb, private val kho: KhoSaoLuu) {
         if (sl.launcherDaCai) {
             bao(t("Trả Home gốc…", "Restoring the stock Home…"))
             val goc = sl.homeTruoc
-            if (goc.isNotBlank() && HOME_SACH.none { goc.startsWith("$it/") }) {
+            val homeCuaBanNay = if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) setOf(pkgHome) else HOME_SACH
+            if (goc.isNotBlank() && homeCuaBanNay.none { goc.startsWith("$it/") }) {
                 sh("cmd package set-home-activity --user 0 $goc")
             }
             if (!goLauncher) {
@@ -1173,7 +1195,9 @@ class ThaoTacTv(private val adb: KetNoiAdb, private val kho: KhoSaoLuu) {
             }
             if (goLauncher) {
                 bao(t("Gỡ Home sạch…", "Removing the clean Home…"))
-                HOME_SACH.filter { it == PKG_HOME || it == pkgHome }.forEach { sh("pm uninstall $it") }
+                val goiCanGo = if (zone.vgs.tvsach.BuildConfig.AQUA_LITE) setOf(pkgHome)
+                    else HOME_SACH.filter { it == PKG_HOME || it == pkgHome }.toSet()
+                goiCanGo.forEach { sh("pm uninstall $it") }
                 // Trả danh sách dịch vụ trợ năng như trước khi làm (app có thể đã bật HomeKeyService / InputKeyService).
                 val tc = sl.truyCapTruoc
                 if (tc.isBlank() || tc == "null") sh("settings delete secure enabled_accessibility_services")
