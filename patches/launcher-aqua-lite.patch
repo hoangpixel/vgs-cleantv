@@ -1,0 +1,1024 @@
+diff --git a/launcher/app/build.gradle b/launcher/app/build.gradle
+index 023aecd..dc9e92b 100644
+--- a/launcher/app/build.gradle
++++ b/launcher/app/build.gradle
+@@ -2,6 +2,8 @@ plugins {
+     id 'com.android.application'
+ }
+ 
++def aquaLauncher = providers.gradleProperty('launcherApplicationId').getOrElse('') == 'vn.anghon.aqua.launcher'
++
+ android {
+     namespace 'com.gathin.tvhome'
+     compileSdk 34
+@@ -11,8 +13,8 @@ android {
+         applicationId providers.gradleProperty('launcherApplicationId').getOrElse('com.gathin.tvhome')
+         minSdk 26
+         targetSdk 34
+-        versionCode 11
+-        versionName '3.2'
++        versionCode (aquaLauncher ? 16 : 11)
++        versionName (aquaLauncher ? '2.3e' : '3.2')
+     }
+ 
+     buildTypes {
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/AquaCinematic.java b/launcher/app/src/main/java/com/gathin/tvhome/AquaCinematic.java
+new file mode 100644
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/AquaCinematic.java
+@@ -0,0 +1,36 @@
++package com.gathin.tvhome;
++
++import android.content.res.Resources;
++import android.graphics.Bitmap;
++import android.graphics.drawable.BitmapDrawable;
++import android.view.Gravity;
++
++/** One cached coloured scrim, replacing the upstream scrim rather than adding a full-screen layer. */
++final class AquaCinematic {
++    private final AquaSurface surface;
++    private BitmapDrawable scrim;
++
++    AquaCinematic(Config config) {
++        surface = config.aquaGalaxy
++                ? AquaSurface.galaxy(config.galaxyNavy, config.galaxySpace, config.galaxyDarkTeal,
++                    config.galaxyOcean, config.galaxyGlow, config.galaxyIndigo, config.focusAccentColor)
++                : new AquaSurface(config.backgroundColor, config.aquaNightColor,
++                    config.aquaGradientColor, config.focusAccentColor);
++        if (config.aquaCosmicPlus) surface.withCosmicPlusDecor();
++        else if (config.aquaCosmic) surface.withCosmicDecor();
++    }
++
++    int accentColor() { return surface.accentColor(); }
++
++    BitmapDrawable scrim(Resources resources, boolean rtl) {
++        if (scrim == null) {
++            // Prepared only during Activity setup, never on focus or in onDraw. The View retains this texture.
++            Bitmap bitmap = Bitmap.createBitmap(surface.pixels(rtl), AquaSurface.WIDTH, AquaSurface.HEIGHT,
++                    Bitmap.Config.ARGB_8888);
++            scrim = new BitmapDrawable(resources, bitmap);
++            scrim.setFilterBitmap(true);
++            scrim.setGravity(Gravity.FILL);
++        }
++        return scrim;
++    }
++}
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/AquaGreeting.java b/launcher/app/src/main/java/com/gathin/tvhome/AquaGreeting.java
+new file mode 100644
+index 0000000..26ce2fe
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/AquaGreeting.java
+@@ -0,0 +1,22 @@
++package com.gathin.tvhome;
++
++import java.util.Calendar;
++
++/** Reads the TV's local Calendar; deliberately independent of lunar UTC offset and phone time. */
++final class AquaGreeting {
++    private AquaGreeting() { }
++
++    static String text(Calendar now, String name) {
++        String owner = name == null ? "" : name.trim();
++        if (owner.isEmpty()) owner = "Ăng Hòn";
++        int hour = now.get(Calendar.HOUR_OF_DAY);
++        String wish = hour >= 5 && hour < 12 ? "Chúc buổi sáng tốt lành."
++                : hour >= 12 && hour < 17 ? "Chúc buổi chiều vui vẻ."
++                : hour >= 17 && hour < 22 ? "Chúc buổi tối thư giãn." : "Chúc ngủ ngon.";
++        return "Xin chào, " + owner + "! " + wish;
++    }
++
++    static long nextMinuteDelay(long nowMillis) {
++        return 60_000L - Math.floorMod(nowMillis, 60_000L);
++    }
++}
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/AquaHeader.java b/launcher/app/src/main/java/com/gathin/tvhome/AquaHeader.java
+new file mode 100644
+index 0000000..ff6f801
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/AquaHeader.java
+@@ -0,0 +1,27 @@
++package com.gathin.tvhome;
++
++import android.app.Activity;
++import android.util.TypedValue;
++import android.view.ViewGroup;
++import android.widget.LinearLayout;
++import android.widget.TextView;
++
++/** Applied once after the existing date_below_clock layout, only for the cosmic preset. */
++final class AquaHeader {
++    private AquaHeader() { }
++
++    static void apply(Activity activity) {
++        TextView greeting = activity.findViewById(R.id.greeting);
++        if (!(greeting.getParent() instanceof LinearLayout)) return;
++        LinearLayout column = (LinearLayout) greeting.getParent();
++        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) greeting.getLayoutParams();
++        column.removeView(greeting);
++        lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
++        lp.topMargin = Math.round(6 * activity.getResources().getDisplayMetrics().density);
++        lp.bottomMargin = 0;
++        // Clock row, date/lunar column, then greeting. Retain single-line/ellipsis and the Vietnamese font.
++        column.addView(greeting, lp);
++        greeting.setAutoSizeTextTypeUniformWithConfiguration(11, 12, 1, TypedValue.COMPLEX_UNIT_SP);
++        greeting.setAlpha(0.82f);
++    }
++}
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/AquaSurface.java b/launcher/app/src/main/java/com/gathin/tvhome/AquaSurface.java
+new file mode 100644
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/AquaSurface.java
+@@ -0,0 +1,156 @@
++package com.gathin.tvhome;
++
++/** Static ARGB compositing shared by the Android texture and host-side rendering checks. */
++final class AquaSurface {
++    static final int WIDTH = 480, HEIGHT = 270;
++    static final int DEFAULT_ACCENT = 0xFF80DEDA;
++    private final int navy, night, teal, aqua;
++    private boolean galaxy;
++    private boolean cosmic;
++    private boolean cosmicPlus;
++    private int darkTeal, galaxyGlow, indigo;
++
++    static AquaSurface galaxy(int navy, int night, int darkTeal, int ocean, int glow, int indigo, int accent) {
++        AquaSurface result = new AquaSurface(navy, night, ocean, accent);
++        result.galaxy = true;
++        result.darkTeal = darkTeal | 0xFF000000;
++        result.galaxyGlow = glow | 0xFF000000;
++        result.indigo = indigo | 0xFF000000;
++        return result;
++    }
++
++    AquaSurface(int navy, int night, int teal, int aqua) {
++        this.navy = navy | 0xFF000000;
++        this.night = night | 0xFF000000;
++        this.teal = teal | 0xFF000000;
++        this.aqua = aqua == 0 ? DEFAULT_ACCENT : aqua | 0xFF000000;
++    }
++
++    AquaSurface withCosmicDecor() {
++        cosmic = galaxy;
++        cosmicPlus = false;
++        return this;
++    }
++
++    AquaSurface withCosmicPlusDecor() {
++        cosmic = galaxy;
++        cosmicPlus = galaxy;
++        return this;
++    }
++
++    int[] pixels(boolean rtl) {
++        int[] pixels = new int[WIDTH * HEIGHT];
++        if (galaxy) {
++            // Expensive curve work once per column, not once per pixel. No work during focus/rendering.
++            for (int x = 0; x < WIDTH; x++) {
++                float u = (rtl ? WIDTH - 1 - x : x) / (float) (WIDTH - 1);
++                float path = galaxyPath(u), curl = (float) Math.sin(u * 13f + 2f);
++                for (int y = 0; y < HEIGHT; y++) {
++                    int colour = galaxyPixel(u, y / (float) (HEIGHT - 1), path, curl);
++                    pixels[y * WIDTH + x] = dither(colour, rtl ? WIDTH - 1 - x : x, y);
++                }
++            }
++            if (cosmicPlus) CosmicPlusDecor.paint(pixels, rtl, aqua);
++            else if (cosmic) CosmicDecor.paint(pixels, rtl, aqua);
++            return pixels;
++        }
++        for (int y = 0; y < HEIGHT; y++) {
++            for (int x = 0; x < WIDTH; x++) {
++                pixels[y * WIDTH + x] = pixel(x / (float) (WIDTH - 1), y / (float) (HEIGHT - 1), rtl);
++            }
++        }
++        return pixels;
++    }
++
++    /** Artwork/ambient are BELOW this scrim. Text, dock and focus remain ABOVE it. */
++    int pixel(float x, float y, boolean rtl) {
++        if (rtl) x = 1f - x;
++        if (galaxy) return galaxyPixel(x, y, galaxyPath(x), (float) Math.sin(x * 13f + 2f));
++        float dx = x - 0.85f, dy = (y - 0.22f) * HEIGHT / WIDTH;
++        float tealLight = clamp(1f - (dx * dx + dy * dy) / 0.81f);
++        int colour = alpha(teal, Math.round(180f * tealLight));
++        dx = x - 0.98f;
++        dy = (y - 0.05f) * HEIGHT / WIDTH;
++        float aquaLight = clamp(1f - (dx * dx + dy * dy) / 0.2025f);
++        colour = over(alpha(aqua, Math.round(112f * aquaLight * aquaLight)), colour);
++        // Keep white toolbar labels readable even when artwork underneath is white.
++        float topShade = 0.48f * clamp((0.35f - y) / 0.35f);
++        colour = over(alpha(night, Math.round(255f * topShade)), colour);
++        // Preserve the cinematic text-side and lower-screen shadows after applying the colour wash.
++        float leftShade = x <= 0.25f ? 0.90f : 0.90f * clamp((0.92f - x) / 0.67f);
++        colour = over(alpha(navy, Math.round(255f * leftShade)), colour);
++        float lowerShade = clamp((y - 0.38f) / 0.62f);
++        return over(alpha(night, Math.round(245f * lowerShade)), colour);
++    }
++
++    int accentColor() { return aqua; }
++
++    private static float galaxyPath(float x) {
++        return 0.68f - 0.48f * x + 0.055f * (float) Math.sin(x * 7f + 0.4f);
++    }
++
++    /** Compact smooth falloff; the texture is baked, not a live shader. */
++    private static float bell(float distance) {
++        float t = clamp(1f - distance * distance);
++        return t * t * t;
++    }
++
++    private int galaxyPixel(float x, float y, float path, float curl) {
++        int colour = alpha(night, 190);
++        float cloud = bell((x - 0.56f) / 0.63f) * bell((y - 0.48f) / 0.46f);
++        colour = over(alpha(darkTeal, Math.round(165f * cloud)), colour);
++        float blueCloud = bell((x - 0.82f) / 0.48f) * bell((y - 0.49f) / 0.28f);
++        colour = over(alpha(indigo, Math.round(140f * blueCloud)), colour);
++        float span = bell((x - 0.64f) / 0.85f);
++        float band = bell((y - path) / 0.19f) * span;
++        colour = over(alpha(teal, Math.round(190f * band)), colour);
++        // A broad cloud plus a folded wisp: avoid a single straight neon beam.
++        float fold = bell((y - path - 0.09f - 0.035f * curl) / 0.065f) * bell((x - 0.7f) / 0.55f);
++        colour = over(alpha(galaxyGlow, Math.round(65f * fold)), colour);
++        float ribbon = bell((y - path - 0.028f * curl) / 0.105f) * span;
++        colour = over(alpha(galaxyGlow, Math.round(118f * ribbon)), colour);
++        float thread = bell((y - path + 0.022f * curl) / 0.036f) * span;
++        colour = over(alpha(aqua, Math.round(40f * thread)), colour);
++        // The same protected text/toolbar/dock zones as v2.1, independent of the coloured cloud.
++        colour = over(alpha(night, Math.round(255f * 0.48f * clamp((0.35f - y) / 0.35f))), colour);
++        float left = x <= 0.25f ? 0.90f : 0.90f * clamp((0.92f - x) / 0.67f);
++        colour = over(alpha(navy, Math.round(255f * left)), colour);
++        return over(alpha(night, Math.round(245f * clamp((y - 0.38f) / 0.62f))), colour);
++    }
++
++    /** Fixed +/-1 LSB luminance dither, baked once. No random state or moving stars. */
++    private static int dither(int colour, int x, int y) {
++        int hash = x * 0x1f123bb5 ^ y * 0x5f356495;
++        hash ^= hash >>> 16;
++        hash *= 0x45d9f3b;
++        int bucket = hash >>> 30;
++        int delta = bucket == 0 ? -1 : bucket == 3 ? 1 : 0;
++        int r = Math.max(0, Math.min(255, ((colour >>> 16) & 255) + delta));
++        int g = Math.max(0, Math.min(255, ((colour >>> 8) & 255) + delta));
++        int b = Math.max(0, Math.min(255, (colour & 255) + delta));
++        return (colour & 0xFF000000) | r << 16 | g << 8 | b;
++    }
++
++    static int rimColor(int aquaAccent, int original) {
++        return aquaAccent == 0 ? original : aquaAccent | 0xFF000000;
++    }
++
++    private static float clamp(float value) { return Math.max(0f, Math.min(1f, value)); }
++    private static int alpha(int colour, int alpha) { return (colour & 0xFFFFFF) | (alpha << 24); }
++
++    /** Straight-alpha SRC_OVER. Inputs/outputs are ARGB, never tied to Android's stubbed Color API. */
++    static int over(int top, int bottom) {
++        int ta = top >>> 24, ba = bottom >>> 24;
++        int a = ta + (ba * (255 - ta) + 127) / 255;
++        if (a == 0) return 0;
++        int r = channel(top, bottom, 16, ta, ba, a);
++        int g = channel(top, bottom, 8, ta, ba, a);
++        int b = channel(top, bottom, 0, ta, ba, a);
++        return a << 24 | r << 16 | g << 8 | b;
++    }
++
++    private static int channel(int top, int bottom, int shift, int ta, int ba, int a) {
++        int numerator = ((top >> shift) & 255) * ta * 255 + ((bottom >> shift) & 255) * ba * (255 - ta);
++        return Math.min(255, (numerator + a * 127) / (a * 255));
++    }
++}
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Config.java b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
+index 0a152ca..6cf43b1 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/Config.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/Config.java
+@@ -39,6 +39,16 @@ import java.util.Set;
+ final class Config {
+     private static final String TAG = "TvHome.Config";
+     static final String FILE_NAME = "config.json";
++    /** Optional static focus colour, independent of festive skins; zero keeps upstream behaviour. */
++    int focusAccentColor;
++    /** Opt-in Aqua presentation only; navigation and cinematic motion stay upstream's. */
++    boolean aquaCinematic;
++    int aquaGradientColor;
++    int aquaNightColor;
++    boolean aquaGalaxy;
++    boolean aquaCosmic;
++    boolean aquaCosmicPlus;
++    int galaxyNavy, galaxySpace, galaxyDarkTeal, galaxyOcean, galaxyGlow, galaxyIndigo;
+     static final String WALLPAPER_NAME = "wallpaper.jpg";
+     static final String SETTINGS_NAME = "launcher_settings";
+     static final String ROWS_BELOW_DOCK_KEY = "rows_below_dock";
+@@ -532,6 +542,7 @@ final class Config {
+         File file = dir != null ? new File(dir, FILE_NAME) : null;
+         boolean mounted = Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState());
+         JSONObject json = readOverlay(ctx, file, mounted);
++        if (json == null) json = aquaDefaults(ctx);
+         if (json != null) {
+             applied = true;
+             dock = stringList(json, "dock_apps", dock);
+@@ -689,7 +700,7 @@ final class Config {
+         Festival festival = json == null ? Festival.NONE : Festival.parse(festivalName(json),
+                 string(json, "festival_until", ""), string(json, "greeting", ""), string(json, "accent_color", ""));
+ 
+-        return new Config(dock, fillDock, hidden, libraryApps, libraryExcludedApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
++        Config result = new Config(dock, fillDock, hidden, libraryApps, libraryExcludedApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
+                 packageMap(appBanners), panelService, panelAction, panelExtra, coocaaSources, inputAction, inputSources, inputUriScheme, Math.max(1, columns),
+                 Math.max(0, rowsBelow), animations, advancedEffects, shamsi, greetingName, moduleCards, reducedMotion, bootToLiveTv,
+                 openOnStartChoice, dockTitle, dockRow, topMenu, launcherSettingsButton, reorderButton, showNetworkPill, showInputsPill,
+@@ -704,6 +715,20 @@ final class Config {
+                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
+                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly,
+                 Math.max(0, Math.min(600, openOnStartNetworkWait)), iconOnlyVpn, clockFormat, backOpensClock);
++        result.focusAccentColor = json == null ? 0 : color(json, "focus_accent_color", 0);
++        result.aquaCinematic = result.cinematicHome && json != null && bool(json, "aqua_cinematic", false);
++        result.aquaGradientColor = json == null ? 0xFF126A76 : color(json, "aqua_gradient_color", 0xFF126A76);
++        result.aquaNightColor = json == null ? 0xFF091923 : color(json, "aqua_night_color", 0xFF091923);
++        result.aquaGalaxy = result.aquaCinematic && json != null && bool(json, "aqua_galaxy", false);
++        result.aquaCosmic = result.aquaGalaxy && bool(json, "aqua_cosmic", false);
++        result.aquaCosmicPlus = result.aquaCosmic && bool(json, "aqua_cosmic_plus", false);
++        result.galaxyNavy = json == null ? 0xFF0B2030 : color(json, "galaxy_navy_color", 0xFF0B2030);
++        result.galaxySpace = json == null ? 0xFF07121D : color(json, "galaxy_space_color", 0xFF07121D);
++        result.galaxyDarkTeal = json == null ? 0xFF123F50 : color(json, "galaxy_dark_teal_color", 0xFF123F50);
++        result.galaxyOcean = json == null ? 0xFF1A6875 : color(json, "galaxy_ocean_color", 0xFF1A6875);
++        result.galaxyGlow = json == null ? 0xFF52C6C6 : color(json, "galaxy_glow_color", 0xFF52C6C6);
++        result.galaxyIndigo = json == null ? 0xFF4256A8 : color(json, "galaxy_indigo_color", 0xFF4256A8);
++        return result;
+     }
+ 
+     /**
+@@ -816,6 +841,25 @@ final class Config {
+         return json;
+     }
+ 
++    private static boolean aquaDefaultsLoaded;
++    private static JSONObject aquaDefaults;
++
++    /** Same fallback for Config and VGS header readers. Parse this small, immutable asset once per process. */
++    static synchronized JSONObject aquaDefaults(Context ctx) {
++        if (!aquaDefaultsLoaded) {
++            aquaDefaultsLoaded = true;
++            try (java.io.InputStream defaults = ctx.getAssets().open("aqua-defaults.json")) {
++                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
++                byte[] buffer = new byte[4096];
++                for (int n; (n = defaults.read(buffer)) != -1;) bytes.write(buffer, 0, n);
++                aquaDefaults = new JSONObject(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
++            } catch (Exception ignored) {
++                // Original builds have no Aqua asset and retain their previous defaults.
++            }
++        }
++        return aquaDefaults;
++    }
++
+     /** CleanTV/VGS: read() for the readers outside Config (Weather.cauHinh). */
+     static JSONObject readFile(File file) {
+         return read(file);
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/CosmicDecor.java b/launcher/app/src/main/java/com/gathin/tvhome/CosmicDecor.java
+new file mode 100644
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/CosmicDecor.java
+@@ -0,0 +1,70 @@
++package com.gathin.tvhome;
++
++/** Static Champagne Moon baked once into the existing scrim; no extra bitmap, View or clock. */
++final class CosmicDecor {
++    private static final int W=AquaSurface.WIDTH,H=AquaSurface.HEIGHT;
++    static final int CX=413,CY=64,R=24,HALO=8;
++    static final int LIGHT=0xFFE8C8A0,DARK=0xFF77627F,RIM=0xFFF3D9B7,SHADOW=0xFF392C46;
++    private static final int[][] STARS={
++        {278,38,140},{331,22,58},{451,89,130},{442,138,66},
++        {298,119,76},{360,91,60},{278,80,68},{317,70,56},
++        {380,30,74},{466,45,54},{351,145,70},{465,157,50}
++    };
++    private CosmicDecor() { }
++    static int starCount() { return STARS.length; }
++
++    static void paint(int[] pixels,boolean rtl,int accent) {
++        for(int y=CY-R-HALO;y<=CY+R+HALO;y++)for(int x=CX-R-HALO;x<=CX+R+HALO;x++) {
++            float dx=x-CX,dy=y-CY;
++            float distance=(float)Math.sqrt(dx*dx+dy*dy);
++            float halo=clamp((R+HALO-distance)/HALO);
++            // Warm, very faint halo. No aqua is used by the planet itself.
++            blend(pixels,x,y,alpha(RIM,Math.round(14*halo*halo)),rtl);
++            float coverage=clamp(R+.5f-distance);
++            if(coverage==0)continue;
++            float nx=dx/R,ny=dy/R;
++            float nz=(float)Math.sqrt(Math.max(0f,1f-nx*nx-ny*ny));
++            // A spherical normal and an upper-right light create a soft terminator, not a flat yellow disc.
++            float diffuse=clamp((nx*.82f-ny*.30f+nz*.42f+.02f)/.92f);
++            diffuse=diffuse*diffuse*(3f-2f*diffuse);
++            int shaded=mix(SHADOW,DARK,.12f+.48f*nz);
++            int body=mix(shaded,LIGHT,.90f*diffuse);
++            blend(pixels,x,y,alpha(body,Math.round(252*coverage)),rtl);
++            float edge=clamp((distance-(R-1.2f))/1.2f);
++            blend(pixels,x,y,alpha(RIM,Math.round(92*coverage*edge*diffuse)),rtl);
++        }
++        // Identical positions, intensities and sparkles to the accepted v2.3b candidate.
++        for(int i=0;i<STARS.length;i++) {
++            int x=STARS[i][0],y=STARS[i][1];
++            blend(pixels,x,y,alpha(accent,STARS[i][2]),rtl);
++            int arm=(i==0||i==2)?38:12;
++            blend(pixels,x-1,y,alpha(accent,arm),rtl);blend(pixels,x+1,y,alpha(accent,arm),rtl);
++            blend(pixels,x,y-1,alpha(accent,arm),rtl);blend(pixels,x,y+1,alpha(accent,arm),rtl);
++            if(i==0||i==2) {
++                blend(pixels,x-2,y,alpha(accent,14),rtl);blend(pixels,x+2,y,alpha(accent,14),rtl);
++                blend(pixels,x,y-2,alpha(accent,14),rtl);blend(pixels,x,y+2,alpha(accent,14),rtl);
++            }
++        }
++    }
++
++    static boolean planetRegion(int x,int y) {
++        return Math.abs(x-CX)<=R+HALO&&Math.abs(y-CY)<=R+HALO;
++    }
++    static boolean region(int x,int y) {
++        if(planetRegion(x,y))return true;
++        for(int[] s:STARS)if(Math.abs(x-s[0])<=2&&Math.abs(y-s[1])<=2)return true;
++        return false;
++    }
++    private static int mix(int a,int b,float t) {
++        int r=Math.round(((a>>>16)&255)*(1-t)+((b>>>16)&255)*t);
++        int g=Math.round(((a>>>8)&255)*(1-t)+((b>>>8)&255)*t);
++        int blue=Math.round((a&255)*(1-t)+(b&255)*t);
++        return 0xFF000000|r<<16|g<<8|blue;
++    }
++    private static void blend(int[] pixels,int x,int y,int colour,boolean rtl) {
++        if(x<0||x>=W||y<0||y>=H)return;
++        int index=y*W+(rtl?W-1-x:x);pixels[index]=AquaSurface.over(colour,pixels[index]);
++    }
++    private static float clamp(float v) { return Math.max(0f,Math.min(1f,v)); }
++    private static int alpha(int c,int a) { return (c&0xFFFFFF)|(a<<24); }
++}
+diff --git a/launcher/app/src/test/java/com/gathin/tvhome/CosmicPlusDecorTest.java b/launcher/app/src/test/java/com/gathin/tvhome/CosmicPlusDecorTest.java
+new file mode 100644
+--- /dev/null
++++ b/launcher/app/src/test/java/com/gathin/tvhome/CosmicPlusDecorTest.java
+@@ -0,0 +1,46 @@
++package com.gathin.tvhome;
++
++import java.security.MessageDigest;
++import org.junit.Test;
++import static org.junit.Assert.*;
++
++public class CosmicPlusDecorTest {
++    private AquaSurface galaxy() { return AquaSurface.galaxy(0xFF0B2030,0xFF07121D,0xFF123F50,0xFF1A6875,0xFF52C6C6,0xFF4256A8,0xFF80DEDA); }
++
++    @Test public void approvedCosmicPlusPreviewIsPixelIdentical() throws Exception {
++        assertEquals("a9bbfd2737c332b2e83f79e52a4c7852df08c7f13b754f0d6703b88cbcbe6d79",digest(galaxy().withCosmicPlusDecor().pixels(false)));
++    }
++
++    @Test public void decorStaysBoundedAndHeaderPixelsStayUntouched() {
++        int[] base=galaxy().pixels(false),plus=galaxy().withCosmicPlusDecor().pixels(false);int changed=0;
++        for(int y=0;y<270;y++)for(int x=0;x<480;x++)if(base[y*480+x]!=plus[y*480+x]){
++            assertTrue(x>240);assertTrue(CosmicPlusDecor.region(x,y));changed++;
++        }
++        assertTrue(changed>0&&changed<480*270*4/100);
++        assertEquals(28,CosmicPlusDecor.starCount());assertEquals(58,2*CosmicPlusDecor.R);
++        assertEquals(413,CosmicPlusDecor.CX);assertEquals(104,CosmicPlusDecor.CY);
++        assertEquals(19,CosmicPlusDecor.CY-CosmicPlusDecor.R-CosmicPlusDecor.HALO-48);
++    }
++
++    @Test public void staticPixelsRepeatAndMirrorInRtl() {
++        AquaSurface surface=galaxy().withCosmicPlusDecor();int[] a=surface.pixels(false),b=surface.pixels(true);
++        assertArrayEquals(a,surface.pixels(false));
++        for(int y=0;y<270;y++)for(int x=0;x<480;x++)assertEquals(a[y*480+x],b[y*480+479-x]);
++    }
++
++    @Test public void rollbackFactoryStillSelectsExactV23cPixels() throws Exception {
++        AquaSurface surface=galaxy().withCosmicPlusDecor();
++        assertEquals("61b836ba35389065601e687afa875b84e43d4556d34437179cb6fff418201885",digest(surface.withCosmicDecor().pixels(false)));
++    }
++
++    @Test public void nonGalaxyDoesNotAcquirePlusDecoration() {
++        int[] before=new AquaSurface(0xFF102637,0xFF091923,0xFF126A76,0xFF80DEDA).pixels(false);
++        assertArrayEquals(before,new AquaSurface(0xFF102637,0xFF091923,0xFF126A76,0xFF80DEDA).withCosmicPlusDecor().pixels(false));
++    }
++
++    private static String digest(int[] pixels) throws Exception {
++        MessageDigest sha=MessageDigest.getInstance("SHA-256");
++        for(int p:pixels){sha.update((byte)(p>>>24));sha.update((byte)(p>>>16));sha.update((byte)(p>>>8));sha.update((byte)p);}
++        StringBuilder hex=new StringBuilder();for(byte b:sha.digest())hex.append(String.format("%02x",b&255));return hex.toString();
++    }
++}
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/GlassView.java b/launcher/app/src/main/java/com/gathin/tvhome/GlassView.java
+index 0fd2b6c..0338196 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/GlassView.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/GlassView.java
+@@ -29,6 +29,8 @@ public class GlassView extends View {
+     /** glass_style rim or halo: no sheen and no fill, only the crisp rim (and, for halo, a lighter outer glow). */
+     private boolean flat;
+     private boolean halo;
++    /** Aqua only: keep the rim recognisable while upstream retains the app/festival glow colour. */
++    private int rimAccent;
+ 
+     public GlassView(Context context, AttributeSet attrs) {
+         super(context, attrs);
+@@ -44,7 +46,12 @@ public class GlassView extends View {
+         setLayerType(LAYER_TYPE_HARDWARE, null);
+     }
+ 
+-    /** Tints the rim and the outer glow; 0 restores the plain white glass. */
++    void setRimAccent(int colour) {
++        rimAccent = colour;
++        setAccent(colour);
++    }
++
++    /** Tints the rim and the outer glow; 0 restores the plain white glass unless Aqua supplies its rim. */
+     void setAccent(int argb) {
+         if (argb == 0) {
+             glowRgb = 0xFFFFFF;
+@@ -58,6 +65,7 @@ public class GlassView extends View {
+                     b = ((glowRgb & 0xFF) + 255 * 2) / 3;
+             rim.setColor(0xE6000000 | (r << 16) | (g << 8) | b);
+         }
++        rim.setColor(AquaSurface.rimColor(rimAccent, rim.getColor()));
+         invalidate();
+     }
+ 
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+index 3e98d8c..a552c84 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/MainActivity.java
+@@ -220,6 +220,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     private boolean shamsi;
+     /** greeting_name: said after the greeting, which is shown in capitals. */
+     private String greetingName = "";
++    private int focusAccentColor;
++    private boolean aquaCinematic;
++    private AquaCinematic aquaDesign;
+     /** Optional time-of-day backdrop (config.xml, sky_intensity); 0 keeps it hidden. */
+     private SkyView sky;
+     private String vpnApp;
+@@ -418,6 +421,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         @Override
+         public void onReceive(Context context, Intent intent) {
+             updateClockVisibility();
++            if (aquaCinematic && resumed) {
++                handler.removeCallbacks(minuteTick);
++                handler.postDelayed(minuteTick, AquaGreeting.nextMinuteDelay(System.currentTimeMillis()));
++            }
+         }
+     };
+     private final Runnable minuteTick = new Runnable() {
+@@ -431,7 +438,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+             updateWeather();
+             sky.update();
+             wallpaperPlayer.update();
+-            handler.postDelayed(this, MINUTE_MS);
++            handler.postDelayed(this, aquaCinematic
++                    ? AquaGreeting.nextMinuteDelay(System.currentTimeMillis()) : MINUTE_MS);
+         }
+     };
+ 
+@@ -492,6 +500,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+ 
+         root = findViewById(R.id.root);
+         root.setBackgroundColor(cfg.backgroundColor);
++        aquaCinematic = cfg.aquaCinematic;
++        if (aquaCinematic) aquaDesign = new AquaCinematic(cfg);
+         // root fills the window with an opaque colour (Config keeps background_color opaque), so the window's own
+         // black under it is a second full-screen fill on every frame for nothing. The starting window still uses
+         // the theme's background, so launch looks the same.
+@@ -501,7 +511,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         sky.setIntensity(cfg.skyIntensity);
+         glass = findViewById(R.id.glass);
+         glass.setStyle(cfg.glassStyle);
+-        if (festive) glass.setAccent(festival.accentColor());
++        focusAccentColor = cfg.focusAccentColor;
++        glass.setAccent(festive ? festival.accentColor() : focusAccentColor);
++        if (aquaCinematic && !festive) glass.setRimAccent(aquaDesign.accentColor());
+         ambient = findViewById(R.id.ambient);
+         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
+         // a fade renders it into a full-screen offscreen buffer first.
+@@ -527,6 +539,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         // still follows the dock.
+         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
+         greeting = findViewById(R.id.greeting);
++        if (aquaCinematic) {
++            greeting.setAllCaps(false);
++            greeting.setLetterSpacing(0.01f);
++            greeting.setAutoSizeTextTypeUniformWithConfiguration(11, 14, 1, TypedValue.COMPLEX_UNIT_SP);
++        }
+         clockBlock = findViewById(R.id.leftBlock);
+         greetingColor = greeting.getCurrentTextColor();
+         if (!cfg.showGreeting) greeting.setVisibility(View.GONE);
+@@ -546,6 +563,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+             findViewById(R.id.clockDivider).setBackgroundColor(mauChu);
+             greetingColor = mauChu;
+         }
++        if (aquaCinematic && !festive) {
++            findViewById(R.id.clockDivider).setBackgroundColor(aquaDesign.accentColor());
++        }
+         if (getResources().getBoolean(R.bool.rtl_menu_bar)) {
+             // Center Hebrew greetings over the numeric time, independent of a visible AM/PM label. The clock's row
+             // is watched too: date_below_clock can move the whole row right under a wider date.
+@@ -592,7 +612,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+             date.setPadding(0, (int) (4 * density), 0, 0);
+             lunarDate.setTextSize(11f);
+         }
+-        if (cfg.dateBelowClock) moveDateBelowClock();
++        if (cfg.dateBelowClock || cfg.aquaCosmic) moveDateBelowClock();
++        if (cfg.aquaCosmic) AquaHeader.apply(this);
+         if (shamsi) {
+             shamsiDate.setVisibility(View.VISIBLE);
+             TextView date = findViewById(R.id.date);
+@@ -1152,6 +1173,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+     @Override
+     protected void onNewIntent(Intent intent) {
+         super.onNewIntent(intent);
++        if (intent != null && (getPackageName() + ".action.APPLY_THEME").equals(intent.getAction())) {
++            recreate();
++            return;
++        }
+         if (openLauncherSettingsIfAsked(intent)) return;
+         if (openInputsIfAsked(intent)) return;
+         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+@@ -1258,7 +1283,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         updateWeather();
+         sky.update();
+         wallpaperPlayer.start();
+-        handler.postDelayed(minuteTick, MINUTE_MS);
++        handler.postDelayed(minuteTick, aquaCinematic
++                ? AquaGreeting.nextMinuteDelay(System.currentTimeMillis()) : MINUTE_MS);
+         if (festive && lamp != null) {
+             lamp.start();
+             LocalDate today = LocalDate.now();
+@@ -1850,7 +1876,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         drop();
+         reordering = false;
+         adapter.setReordering(false);
+-        glass.setAccent(festive ? festival.accentColor() : 0);
++        glass.setAccent(festive ? festival.accentColor() : focusAccentColor);
+         btnReorder.setActivated(false);
+         List<String> keys = adapter.movableKeys();
+         List<String> before = orderAtStart;
+@@ -2186,6 +2212,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+      * the grid stay readable over the artwork. One small bitmap stretched over the screen, like the glow.
+      */
+     private Drawable scrimDrawable() {
++        if (aquaCinematic) return aquaDesign.scrim(getResources(), getResources().getBoolean(R.bool.rtl_menu_bar));
+         int w = 480, h = 270;
+         Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+         Canvas canvas = new Canvas(bmp);
+@@ -2931,6 +2958,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
+         if (!festiveGreeting.isEmpty()) {
+             greeting.setText(festiveGreeting);
+             greeting.setTextColor(liftTowardsWhite(festival.accentColor(), 0.25f));
++        } else if (aquaCinematic) {
++            String text = AquaGreeting.text(Calendar.getInstance(), greetingName);
++            if (!text.contentEquals(greeting.getText())) greeting.setText(text);
++            greeting.setTextColor(greetingColor);
+         } else {
+             greeting.setText(greetingName.isEmpty() ? getString(res)
+                     : getString(R.string.greeting_with_name, getString(res), greetingName));
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/Weather.java b/launcher/app/src/main/java/com/gathin/tvhome/Weather.java
+index a62e5fe..1b3e3db 100644
+--- a/launcher/app/src/main/java/com/gathin/tvhome/Weather.java
++++ b/launcher/app/src/main/java/com/gathin/tvhome/Weather.java
+@@ -38,7 +38,7 @@ final class Weather {
+         if (j == null && android.os.SystemClock.elapsedRealtime() < Config.EARLY_BOOT_MS) {
+             j = Config.readFile(new File(ctx.getFilesDir(), Config.FILE_NAME));
+         }
+-        return j;
++        return j != null ? j : Config.aquaDefaults(ctx);
+     }
+ 
+     /** The configured place, or null when the weather line is off. */
+diff --git a/launcher/app/src/test/java/com/gathin/tvhome/AquaGreetingTest.java b/launcher/app/src/test/java/com/gathin/tvhome/AquaGreetingTest.java
+new file mode 100644
+index 0000000..749f384
+--- /dev/null
++++ b/launcher/app/src/test/java/com/gathin/tvhome/AquaGreetingTest.java
+@@ -0,0 +1,45 @@
++package com.gathin.tvhome;
++
++import java.util.Calendar;
++import java.util.TimeZone;
++import org.junit.Test;
++import static org.junit.Assert.*;
++
++public class AquaGreetingTest {
++    private Calendar local(int hour, int minute) {
++        Calendar now = Calendar.getInstance(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
++        now.set(2026, Calendar.NOVEMBER, 1, hour, minute, 0);
++        return now;
++    }
++
++    @Test public void everyBoundaryUsesTheCorrectDayPart() {
++        for (int minute = 0; minute < 24 * 60; minute++) {
++            int hour = minute / 60;
++            String wish = hour < 5 || hour >= 22 ? "Chúc ngủ ngon."
++                    : hour < 12 ? "Chúc buổi sáng tốt lành."
++                    : hour < 17 ? "Chúc buổi chiều vui vẻ." : "Chúc buổi tối thư giãn.";
++            assertEquals("minute " + minute, "Xin chào, Ăng Hòn! " + wish,
++                    AquaGreeting.text(local(hour, minute % 60), "Ăng Hòn"));
++        }
++    }
++
++    @Test public void timeZoneChangeChangesTheGreetingAtTheSameInstant() {
++        Calendar now = local(5, 0);
++        assertTrue(AquaGreeting.text(now, "Gia đình").contains("buổi sáng"));
++        now.setTimeZone(TimeZone.getTimeZone("UTC"));
++        assertEquals("Xin chào, Gia đình! Chúc ngủ ngon.", AquaGreeting.text(now, "Gia đình"));
++    }
++
++    @Test public void nameIsTrimmedAndBlankFallsBackWithoutLosingVietnamese() {
++        assertTrue(AquaGreeting.text(local(17, 0), "  Hòn Đảo  ").startsWith("Xin chào, Hòn Đảo!"));
++        assertEquals(AquaGreeting.text(local(17, 0), "Ăng Hòn"), AquaGreeting.text(local(17, 0), "  "));
++        assertEquals(AquaGreeting.text(local(17, 0), "Ăng Hòn"), AquaGreeting.text(local(17, 0), null));
++    }
++
++    @Test public void existingMinuteTickStaysAlignedWithoutABusyLoop() {
++        assertEquals(60_000L, AquaGreeting.nextMinuteDelay(0));
++        assertEquals(1L, AquaGreeting.nextMinuteDelay(59_999));
++        assertEquals(59_999L, AquaGreeting.nextMinuteDelay(60_001));
++        assertEquals(1L, AquaGreeting.nextMinuteDelay(-1));
++    }
++}
+diff --git a/launcher/app/src/test/java/com/gathin/tvhome/AquaSurfaceTest.java b/launcher/app/src/test/java/com/gathin/tvhome/AquaSurfaceTest.java
+new file mode 100644
+index 0000000..7ff7567
+--- /dev/null
++++ b/launcher/app/src/test/java/com/gathin/tvhome/AquaSurfaceTest.java
+@@ -0,0 +1,77 @@
++package com.gathin.tvhome;
++
++import org.junit.Test;
++import static org.junit.Assert.*;
++
++public class AquaSurfaceTest {
++    private final AquaSurface surface = new AquaSurface(0xFF102637, 0xFF091923, 0xFF126A76, 0xFF80DEDA);
++
++    @Test public void sourceOverHonoursAlphaAndDrawOrder() {
++        assertEquals(0xFF123456, AquaSurface.over(0, 0xFF123456));
++        assertEquals(0xFFABCDEF, AquaSurface.over(0xFFABCDEF, 0xFF123456));
++        assertEquals(0xFF80007F, AquaSurface.over(0x80FF0000, 0xFF0000FF));
++        assertNotEquals(AquaSurface.over(0x80FF0000, 0xFF0000FF), AquaSurface.over(0xFF0000FF, 0x80FF0000));
++    }
++
++    @Test public void aquaSurvivesWarmAndNeutralArtworkUnderTheScrim() {
++        int tint = surface.pixel(0.88f, 0.20f, false);
++        for (int artwork : new int[]{0xFFE04020, 0xFF999999, 0xFFFFFFFF, 0xFF101010}) {
++            int shown = AquaSurface.over(tint, artwork);
++            assertTrue("green over artwork", green(shown) > red(shown) + 20);
++            assertTrue("blue over artwork", blue(shown) > red(shown) + 20);
++        }
++    }
++
++    @Test public void centralArtworkRemainsVisibleThroughTheTint() {
++        int tint = surface.pixel(0.65f, 0.32f, false);
++        assertTrue((tint >>> 24) > 0 && (tint >>> 24) < 240);
++        assertNotEquals(AquaSurface.over(tint, 0xFFCC4422), AquaSurface.over(tint, 0xFF2244CC));
++    }
++
++    @Test public void leftTextAndLowerDockKeepContrastOverWhiteArtwork() {
++        for (float[] point : new float[][]{{0.08f, 0.12f}, {0.20f, 0.45f}, {0.15f, 0.65f}, {0.8f, 0.9f}}) {
++            int colour = AquaSurface.over(surface.pixel(point[0], point[1], false), 0xFFFFFFFF);
++            assertTrue("white text contrast at " + point[0] + "," + point[1], contrastWhite(colour) >= 7.0);
++        }
++    }
++
++    @Test public void upperToolbarKeepsContrastOverWhiteArtwork() {
++        for (float[] point : new float[][]{{0.85f, 0.05f}, {0.95f, 0.08f}, {0.75f, 0.1f}}) {
++            int colour = AquaSurface.over(surface.pixel(point[0], point[1], false), 0xFFFFFFFF);
++            assertTrue("toolbar contrast at " + point[0] + "," + point[1] + " = " + contrastWhite(colour), contrastWhite(colour) >= 4.5);
++        }
++    }
++
++    @Test public void rimIsExactAquaAndOrdinaryThemesKeepTheirColour() {
++        assertEquals(0xFF80DEDA, AquaSurface.rimColor(surface.accentColor(), 0xFFEEDDDD));
++        assertEquals(0xCCFFFFFF, AquaSurface.rimColor(0, 0xCCFFFFFF));
++        assertEquals(AquaSurface.DEFAULT_ACCENT, new AquaSurface(0, 0, 0, 0).accentColor());
++    }
++
++    @Test public void rtlMirrorsColourAndTextShadowWithoutMovingViews() {
++        assertEquals(surface.pixel(0.25f, 0.5f, false), surface.pixel(0.75f, 0.5f, true));
++        assertEquals(surface.pixel(0.75f, 0.25f, false), surface.pixel(0.25f, 0.25f, true));
++    }
++
++    @Test public void textureIsDeterministicBoundedAndHasDepth() {
++        int[] pixels = surface.pixels(false);
++        assertEquals(480 * 270, pixels.length);
++        assertArrayEquals(pixels, surface.pixels(false));
++        assertNotEquals(pixels[0], pixels[479]);
++        assertNotEquals(pixels[479], pixels[pixels.length - 1]);
++    }
++
++    @Test public void configuredPaletteChangesTheRenderedPixels() {
++        AquaSurface custom = new AquaSurface(0xFF102637, 0xFF091923, 0xFF604080, 0xFFBBAADD);
++        assertNotEquals(surface.pixel(0.9f, 0.2f, false), custom.pixel(0.9f, 0.2f, false));
++        assertEquals(0xFFBBAADD, custom.accentColor());
++    }
++
++    private static int red(int c) { return c >> 16 & 255; }
++    private static int green(int c) { return c >> 8 & 255; }
++    private static int blue(int c) { return c & 255; }
++    private static double linear(int c) { double v = c / 255.0; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
++    private static double contrastWhite(int c) {
++        return 1.05 / (0.2126 * linear(red(c)) + 0.7152 * linear(green(c)) + 0.0722 * linear(blue(c)) + 0.05);
++    }
++}
+diff --git a/launcher/app/src/test/java/com/gathin/tvhome/CosmicDecorTest.java b/launcher/app/src/test/java/com/gathin/tvhome/CosmicDecorTest.java
+new file mode 100644
+--- /dev/null
++++ b/launcher/app/src/test/java/com/gathin/tvhome/CosmicDecorTest.java
+@@ -0,0 +1,54 @@
++package com.gathin.tvhome;
++
++import java.security.MessageDigest;
++import org.junit.Test;
++import static org.junit.Assert.*;
++
++public class CosmicDecorTest {
++    private AquaSurface galaxy() { return AquaSurface.galaxy(0xFF0B2030,0xFF07121D,0xFF123F50,0xFF1A6875,0xFF52C6C6,0xFF4256A8,0xFF80DEDA); }
++
++    @Test public void galaxyV22RemainsExactlyUnchanged() throws Exception {
++        MessageDigest sha=MessageDigest.getInstance("SHA-256");
++        for(int p:galaxy().pixels(false)){sha.update((byte)(p>>>24));sha.update((byte)(p>>>16));sha.update((byte)(p>>>8));sha.update((byte)p);}
++        StringBuilder hex=new StringBuilder();for(byte b:sha.digest())hex.append(String.format("%02x",b&255));
++        assertEquals("46e44756d7cf4c920c88f5558042f2be818dda077de58e66c9d9f545aa509b84",hex.toString());
++    }
++
++    @Test public void decorStaysWithinThreePercentAndOnlyItsDeclaredRegions() {
++        int[] before=galaxy().pixels(false),after=galaxy().withCosmicDecor().pixels(false);int changed=0;
++        assertEquals(before.length,after.length);
++        for(int y=0;y<AquaSurface.HEIGHT;y++)for(int x=0;x<AquaSurface.WIDTH;x++)if(before[y*480+x]!=after[y*480+x]){
++            assertTrue(CosmicDecor.region(x,y));assertTrue(x>240);changed++;
++        }
++        assertTrue(changed>100);assertTrue(changed<480*270*3/100);
++    }
++
++    @Test public void approvedChampagnePreviewRemainsPixelIdentical() throws Exception {
++        MessageDigest sha=MessageDigest.getInstance("SHA-256");
++        for(int p:galaxy().withCosmicDecor().pixels(false)){sha.update((byte)(p>>>24));sha.update((byte)(p>>>16));sha.update((byte)(p>>>8));sha.update((byte)p);}
++        StringBuilder hex=new StringBuilder();for(byte b:sha.digest())hex.append(String.format("%02x",b&255));
++        assertEquals("61b836ba35389065601e687afa875b84e43d4556d34437179cb6fff418201885",hex.toString());
++    }
++
++    @Test public void staticDecorIsDeterministicAndMirrored() {
++        AquaSurface s=galaxy().withCosmicDecor();int[] a=s.pixels(false),b=s.pixels(true);
++        assertArrayEquals(a,s.pixels(false));
++        for(int y=0;y<270;y++)for(int x=0;x<480;x++)assertEquals(a[y*480+x],b[y*480+479-x]);
++    }
++
++    @Test public void legacyNonGalaxyDoesNotGainCosmicDecoration() {
++        int[] before=new AquaSurface(0xFF102637,0xFF091923,0xFF126A76,0xFF80DEDA).pixels(false);
++        assertArrayEquals(before,new AquaSurface(0xFF102637,0xFF091923,0xFF126A76,0xFF80DEDA).withCosmicDecor().pixels(false));
++    }
++
++    @Test public void secondaryGreetingKeepsContrastAgainstWhiteArtwork() {
++        int[] pixels=galaxy().withCosmicDecor().pixels(false);
++        for(int y=30;y<110;y+=10){
++            int bg=AquaSurface.over(pixels[y*480+50],0xFFFFFFFF);
++            int text=AquaSurface.over(0xD1FFFFFF,bg);
++            assertTrue((lum(text)+.05)/(lum(bg)+.05)>=7);
++        }
++    }
++    private static double linear(int c){double v=c/255.0;return v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4);}
++    private static double lum(int c){return .2126*linear((c>>>16)&255)+.7152*linear((c>>>8)&255)+.0722*linear(c&255);}
++}
+diff --git a/launcher/app/src/test/java/com/gathin/tvhome/GalaxySurfaceTest.java b/launcher/app/src/test/java/com/gathin/tvhome/GalaxySurfaceTest.java
+new file mode 100644
+index 0000000..212b9bf
+--- /dev/null
++++ b/launcher/app/src/test/java/com/gathin/tvhome/GalaxySurfaceTest.java
+@@ -0,0 +1,63 @@
++package com.gathin.tvhome;
++
++import java.security.MessageDigest;
++import org.junit.Test;
++import static org.junit.Assert.*;
++
++public class GalaxySurfaceTest {
++    private AquaSurface galaxy(int indigo) {
++        return AquaSurface.galaxy(0xFF0B2030, 0xFF07121D, 0xFF123F50, 0xFF1A6875, 0xFF52C6C6, indigo, 0xFF80DEDA);
++    }
++
++    @Test public void legacyPresetRemainsPixelIdenticalToV21() throws Exception {
++        int[] pixels = new AquaSurface(0xFF102637, 0xFF091923, 0xFF126A76, 0xFF80DEDA).pixels(false);
++        MessageDigest sha = MessageDigest.getInstance("SHA-256");
++        for (int p : pixels) { sha.update((byte)(p >>> 24)); sha.update((byte)(p >>> 16)); sha.update((byte)(p >>> 8)); sha.update((byte)p); }
++        StringBuilder hex = new StringBuilder();
++        for (byte b : sha.digest()) hex.append(String.format("%02x", b & 255));
++        assertEquals("2e7c7a6dfc1694216a2be507312ed20dabd8e8644bf8737f20b73893b6d981c8", hex.toString());
++    }
++
++    @Test public void galaxyIsVisibleAtIdleAndSurvivesArtwork() {
++        AquaSurface s = galaxy(0xFF4256A8);
++        int tint = s.pixel(0.80f, 0.29f, false);
++        for (int input : new int[]{0xFF0B2030, 0xFFE04020, 0xFFFFFFFF, 0xFF3465AD}) {
++            int c = AquaSurface.over(tint, input);
++            assertTrue(((c >>> 8) & 255) > ((c >>> 16) & 255) + 15);
++            assertTrue((c & 255) > ((c >>> 16) & 255) + 15);
++        }
++        assertNotEquals(s.pixel(0.8f, 0.3f, false), s.pixel(0.8f, 0.65f, false));
++        assertNotEquals(AquaSurface.over(s.pixel(0.65f, 0.45f, false), 0xFFCC4422),
++                AquaSurface.over(s.pixel(0.65f, 0.45f, false), 0xFF2244CC));
++    }
++
++    @Test public void indigoIsLocalisedAndChangesTheBlueCloud() {
++        AquaSurface s = galaxy(0xFF4256A8), noIndigo = galaxy(0xFF07121D);
++        assertNotEquals(s.pixel(0.85f, 0.49f, false), noIndigo.pixel(0.85f, 0.49f, false));
++        assertEquals(s.pixel(0.1f, 0.1f, false), noIndigo.pixel(0.1f, 0.1f, false));
++    }
++
++    @Test public void galaxyProtectsTextDockAndToolbarOverWhiteArtwork() {
++        AquaSurface s = galaxy(0xFF4256A8);
++        for (float[] p : new float[][]{{0.08f,0.12f,7}, {0.20f,0.45f,7}, {0.15f,0.65f,7}, {0.8f,0.9f,7},
++                {0.85f,0.05f,4.5f}, {0.95f,0.08f,4.5f}, {0.75f,0.1f,4.5f}}) {
++            assertTrue("contrast at " + p[0] + "," + p[1], contrastWhite(AquaSurface.over(s.pixel(p[0],p[1],false),0xFFFFFFFF)) >= p[2]);
++        }
++    }
++
++    @Test public void bakedDitherIsBoundedDeterministicAndMirrored() {
++        AquaSurface s = galaxy(0xFF4256A8);
++        int[] pixels=s.pixels(false), mirrored=s.pixels(true);
++        assertEquals(480*270,pixels.length);
++        assertArrayEquals(pixels,s.pixels(false));
++        for (int y=0;y<270;y++) for (int x=0;x<480;x++) {
++            assertEquals(pixels[y*480+x],mirrored[y*480+479-x]);
++            int raw=s.pixel(x/479f,y/269f,false), baked=pixels[y*480+x];
++            assertEquals(raw>>>24,baked>>>24);
++            for (int shift:new int[]{0,8,16}) assertTrue(Math.abs(((raw>>>shift)&255)-((baked>>>shift)&255))<=1);
++        }
++    }
++
++    private static double linear(int c) { double v=c/255.0; return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4); }
++    private static double contrastWhite(int c) { return 1.05/(.2126*linear((c>>>16)&255)+.7152*linear((c>>>8)&255)+.0722*linear(c&255)+.05); }
++}
+diff --git a/launcher/app/src/main/java/com/gathin/tvhome/CosmicPlusDecor.java b/launcher/app/src/main/java/com/gathin/tvhome/CosmicPlusDecor.java
+new file mode 100644
+--- /dev/null
++++ b/launcher/app/src/main/java/com/gathin/tvhome/CosmicPlusDecor.java
+@@ -0,0 +1,75 @@
++package com.gathin.tvhome;
++
++/** Approved v2.3e decor baked once into the existing scrim; legacy CosmicDecor remains available. */
++final class CosmicPlusDecor {
++    private static final int W=AquaSurface.WIDTH,H=AquaSurface.HEIGHT;
++    static final int CX=413,CY=104,R=29,HALO=8;
++    static final int LIGHT=0xFFE8C8A0,DARK=0xFF77627F,RIM=0xFFF3D9B7,SHADOW=0xFF392C46;
++    private static final int[][] STARS={
++        {278,38,140},{331,22,58},{451,89,130},{442,138,66},
++        {298,119,76},{360,91,60},{278,80,68},{317,70,56},
++        {380,30,74},{466,45,54},{351,145,70},{465,157,50},
++        {286,185,48},{315,176,58},{391,153,62},{452,183,64},
++        {353,204,52},{278,226,42},{421,220,58},{470,233,46},
++        {330,245,44},{396,251,50},
++        {305,104,48},{340,124,54},{464,119,46},
++        {370,183,52},{309,216,42},{445,246,48}
++    };
++    private CosmicPlusDecor() { }
++    static int starCount() { return STARS.length; }
++
++    static void paint(int[] pixels,boolean rtl,int accent) {
++        for(int y=CY-R-HALO;y<=CY+R+HALO;y++)for(int x=CX-R-HALO;x<=CX+R+HALO;x++) {
++            float dx=x-CX,dy=y-CY;
++            float distance=(float)Math.sqrt(dx*dx+dy*dy);
++            float halo=clamp((R+HALO-distance)/HALO);
++            // Warm, very faint halo. No aqua is used by the planet itself.
++            blend(pixels,x,y,alpha(RIM,Math.round(14*halo*halo)),rtl);
++            float coverage=clamp(R+.5f-distance);
++            if(coverage==0)continue;
++            float nx=dx/R,ny=dy/R;
++            float nz=(float)Math.sqrt(Math.max(0f,1f-nx*nx-ny*ny));
++            // A spherical normal and an upper-right light create a soft terminator, not a flat yellow disc.
++            float diffuse=clamp((nx*.82f-ny*.30f+nz*.42f+.02f)/.92f);
++            diffuse=diffuse*diffuse*(3f-2f*diffuse);
++            int shaded=mix(SHADOW,DARK,.12f+.48f*nz);
++            int body=mix(shaded,LIGHT,.90f*diffuse);
++            blend(pixels,x,y,alpha(body,Math.round(252*coverage)),rtl);
++            float edge=clamp((distance-(R-1.2f))/1.2f);
++            blend(pixels,x,y,alpha(RIM,Math.round(92*coverage*edge*diffuse)),rtl);
++        }
++        // Preserve all 22 v2.3d stars, adding six small points. Keep only the original two sparkle accents.
++        for(int i=0;i<STARS.length;i++) {
++            int x=STARS[i][0],y=STARS[i][1];
++            blend(pixels,x,y,alpha(accent,STARS[i][2]),rtl);
++            int arm=(i==0||i==2)?38:12;
++            blend(pixels,x-1,y,alpha(accent,arm),rtl);blend(pixels,x+1,y,alpha(accent,arm),rtl);
++            blend(pixels,x,y-1,alpha(accent,arm),rtl);blend(pixels,x,y+1,alpha(accent,arm),rtl);
++            if(i==0||i==2) {
++                blend(pixels,x-2,y,alpha(accent,14),rtl);blend(pixels,x+2,y,alpha(accent,14),rtl);
++                blend(pixels,x,y-2,alpha(accent,14),rtl);blend(pixels,x,y+2,alpha(accent,14),rtl);
++            }
++        }
++    }
++
++    static boolean planetRegion(int x,int y) {
++        return Math.abs(x-CX)<=R+HALO&&Math.abs(y-CY)<=R+HALO;
++    }
++    static boolean region(int x,int y) {
++        if(planetRegion(x,y))return true;
++        for(int[] s:STARS)if(Math.abs(x-s[0])<=2&&Math.abs(y-s[1])<=2)return true;
++        return false;
++    }
++    private static int mix(int a,int b,float t) {
++        int r=Math.round(((a>>>16)&255)*(1-t)+((b>>>16)&255)*t);
++        int g=Math.round(((a>>>8)&255)*(1-t)+((b>>>8)&255)*t);
++        int blue=Math.round((a&255)*(1-t)+(b&255)*t);
++        return 0xFF000000|r<<16|g<<8|blue;
++    }
++    private static void blend(int[] pixels,int x,int y,int colour,boolean rtl) {
++        if(x<0||x>=W||y<0||y>=H)return;
++        int index=y*W+(rtl?W-1-x:x);pixels[index]=AquaSurface.over(colour,pixels[index]);
++    }
++    private static float clamp(float v) { return Math.max(0f,Math.min(1f,v)); }
++    private static int alpha(int c,int a) { return (c&0xFFFFFF)|(a<<24); }
++}
